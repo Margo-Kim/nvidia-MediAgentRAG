@@ -19,7 +19,7 @@ import networkx as nx
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from utils.lc_graph import process_documents, save_triples_to_csvs
+from utils.hybrid_search import process_documents, save_triples_to_csvs
 from vectorstore.search import SearchHandler
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from dotenv import load_dotenv
@@ -60,6 +60,13 @@ router = APIRouter()
 class DirectoryRequest(BaseModel):
     directory: str
     model_id: str
+
+
+@router.get("/")
+async def ui_root():
+    logger.info("UI root endpoint accessed")
+    return {"message": "UI backend is running"}
+
 # Define an endpoint to get available models
 @router.get("/get-models/")
 async def get_models():
@@ -111,20 +118,3 @@ async def get_progress():
     except FileNotFoundError:
         return {"progress": "0"}
 
-# Define an endpoint to check if the GraphML file exists
-# @router.get("/check-file-exists/")
-# async def check_file_exists():
-#     graphml_path = os.path.join(DATA_DIR, "knowledge_graph.graphml")
-#     if os.path.exists(graphml_path):
-#         return JSONResponse(content={"file_exists": True})
-#     else:
-#         return JSONResponse(content={"file_exists": False})
-# @router.get("/check-file-exists/")
-# async def check_file_exists():
-#     # Highlight[START]
-#     # Instead of checking for a GraphML file, we'll check for the processed documents
-#     documents_csv_path = os.path.join(DATA_DIR, "documents.csv")
-#     if os.path.exists(documents_csv_path):
-#         return JSONResponse(content={"file_exists": True})
-#     else:
-#         return JSONResponse(content={"file_exists": False})

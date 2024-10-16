@@ -22,6 +22,21 @@ app = FastAPI()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@app.get("/")
+async def root():
+    logger.info("Root endpoint accessed")
+    return {"message": "Server is running"}
+
+# Startup and shutdown events
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Application is starting up")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Application is shutting down")
+
+
 # Include routers from different modules
 app.include_router(ui_backend.router, prefix="/ui")
 app.include_router(chat.router, prefix="/chat")
@@ -31,4 +46,6 @@ app.include_router(visualization.router, prefix="/visualization", tags=["visuali
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="debug")
+
+    

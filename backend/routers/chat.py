@@ -25,6 +25,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.graphs.networkx_graph import NetworkxEntityGraph
 import logging
+import requests
+from typing import Dict, Any
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,68 +44,61 @@ DATA_DIR = os.getenv("DATA_DIR")
 print("DATA_DIR:", DATA_DIR)
 KG_GRAPHML_PATH = os.path.join(DATA_DIR, "knowledge_graph.graphml")
 
+LLAMA_70B_URL = os.getenv("LLAMA_70B_URL", "http://localhost:8000")
+
+# Function to call Llama 3 70B
+def call_llama_70b(prompt: str, max_tokens: int = 64) -> Dict[str, Any]:
+    url = f"{LLAMA_70B_URL}/v1/chat/completions"
+    payload = {
+        "model": "meta/llama3-70b-instruct",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens
+    }
+    headers = {
+        "accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        logger.error(f"Error calling Llama 3 70B: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error calling Llama 3 70B: {str(e)}")
+
+
 # Define an endpoint to get available models
 @router.get("/get-models/")
 async def get_models():
     models = ChatNVIDIA.get_available_models()
     available_models = [model.id for model in models if model.model_type == "chat" and "instruct" in model.id]
+    available_models.append("meta/llama3-70b-instruct")
     return {"models": available_models}
 
-# Define an endpoint for the chat interface
+
 # @router.post("/chat/")
 # async def chat_endpoint(request: ChatRequest):
-#     response_data = {"user_input": request.user_input, "use_kg": request.use_kg}
+#     response_data = {"user_input": request.user_input}
 #     llm = ChatNVIDIA(model=request.model_id)
-#     prompt_template = ChatPromptTemplate.from_messages(
-#         [("system", "You are a helpful AI assistant named Envie. You will reply to questions only based on the context that you are provided. If something is out of context, you will refrain from replying and politely decline to respond to the user."), ("user", "{input}")]
-#     )
+    
+#     prompt_template = ChatPromptTemplate.from_messages([
+#         ("system", "You are a helpful AI assistant named Envie. You will reply to questions based on the context provided. If something is out of context, politely decline to respond."),
+#         ("user", "{input}")
+#     ])
 #     chain = prompt_template | llm | StrOutputParser()
 
-
-#     if request.use_kg:
-#         DATA_DIR = os.getenv("DATA_DIR")
-#         KG_GRAPHML_PATH = os.path.join(DATA_DIR, "knowledge_graph.graphml")
-
-#         logger.info(f"Entering {KG_GRAPHML_PATH}")
-#         if os.path.exists(KG_GRAPHML_PATH):
-#             G = nx.read_graphml(KG_GRAPHML_PATH)
-#             graph = NetworkxEntityGraph(G)
-#             graph_available = True
-#         else:
-#             logger.error(f"Knowledge graph not found at {KG_GRAPHML_PATH}")
-#             graph_available = False
-
-#         if not graph_available:
-#             return {"assistant_response": "The knowledge graph is currently unavailable. Please try again later."}
-        
-#         llm = ChatNVIDIA(model=request.model_id)
-#         graph_chain = GraphQAChain.from_llm(llm=llm, graph=graph, verbose=True)
-        
-#         prompt_template = ChatPromptTemplate.from_messages(
-#             [("system", "You are a helpful AI assistant named Envie. You will reply to questions only based on the context that you are provided. If something is out of context, you will refrain from replying and politely decline to respond to the user."), ("user", "{input}")]
-#         )
-#         chain = prompt_template | llm | StrOutputParser()
-#         search_handler = SearchHandler("hybrid_demo3", use_bge_m3=True, use_reranker=True)
+#     search_handler = SearchHandler("hybrid_demo3", use_bge_m3=True, use_reranker=True)
     
-#         user_input = request.user_input
-#         use_kg = request.use_kg
-    
-#         try:
-#             entity_string = llm.invoke("""Return a JSON with a single key 'entities' and list of entities within this user query. Each element in your list MUST BE part of the user's query. Do not provide any explanation. If the returned list is not parseable in Python, you will be heavily penalized. For example, input: 'What is the difference between Apple and Google?' output: ['Apple', 'Google']. Always follow this output format. Here's the user query: """ + user_input)
-#             entities = json.loads(entity_string.content)['entities']
-#             res = search_handler.search_and_rerank(user_input, k=5)
-#             context = "Here are the relevant passages from the knowledge base: \n\n" + "\n".join(item.text for item in res)
-#             all_triplets = []
-#             for entity in entities:
-#                 all_triplets.extend(graph_chain.graph.get_entity_knowledge(entity, depth=2))
-#             context += "\n\nHere are the relationships from the knowledge graph: " + "\n".join(all_triplets)
-#             response_data["context"] = context
-#         except Exception as e:
-#             response_data["context"] = "No graph triples were available to extract from the knowledge graph. Always provide a disclaimer if you know the answer to the user's question, since it is not grounded in the knowledge you are provided from the graph."
-#     else:
-#         response_data["context"] = ""
+#     try:
+#         search_results = search_handler.search_and_rerank(request.user_input, k=5)
+#         context = "Here are the relevant passages from the knowledge base:\n\n" + "\n".join(item.text for item in search_results)
+#         response_data["context"] = context
+#     except Exception as e:
+#         logger.error(f"Error performing hybrid search: {str(e)}")
+#         response_data["context"] = "No relevant information found in the knowledge base."
 
-#     full_response = llm.invoke(f"Context: {response_data['context']}\n\nUser query: {request.user_input}" if request.use_kg else request.user_input)
+#     full_response = llm.invoke(f"Context: {response_data['context']}\n\nUser query: {request.user_input}")
 #     response_data["assistant_response"] = full_response if isinstance(full_response, str) else full_response.content
 
 #     return response_data
@@ -111,14 +106,7 @@ async def get_models():
 @router.post("/chat/")
 async def chat_endpoint(request: ChatRequest):
     response_data = {"user_input": request.user_input}
-    llm = ChatNVIDIA(model=request.model_id)
     
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("system", "You are a helpful AI assistant named Envie. You will reply to questions based on the context provided. If something is out of context, politely decline to respond."),
-        ("user", "{input}")
-    ])
-    chain = prompt_template | llm | StrOutputParser()
-
     search_handler = SearchHandler("hybrid_demo3", use_bge_m3=True, use_reranker=True)
     
     try:
@@ -129,7 +117,32 @@ async def chat_endpoint(request: ChatRequest):
         logger.error(f"Error performing hybrid search: {str(e)}")
         response_data["context"] = "No relevant information found in the knowledge base."
 
-    full_response = llm.invoke(f"Context: {response_data['context']}\n\nUser query: {request.user_input}")
-    response_data["assistant_response"] = full_response if isinstance(full_response, str) else full_response.content
+    if request.model_id == "meta/llama3-70b-instruct":
+        try:
+            llama_response = call_llama_70b(f"Context: {response_data['context']}\n\nUser query: {request.user_input}")
+            response_data["assistant_response"] = llama_response["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.error(f"Error using Llama 3 70B: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error using Llama 3 70B: {str(e)}")
+    else:
+        llm = ChatNVIDIA(model=request.model_id)
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", "You are a helpful AI assistant named Envie. You will reply to questions based on the context provided. If something is out of context, politely decline to respond."),
+            ("user", "{input}")
+        ])
+        chain = prompt_template | llm | StrOutputParser()
+        full_response = llm.invoke(f"Context: {response_data['context']}\n\nUser query: {request.user_input}")
+        response_data["assistant_response"] = full_response if isinstance(full_response, str) else full_response.content
 
     return response_data
+
+# Add a new endpoint to check Llama 3 70B status
+@router.get("/check-llama-70b-status/")
+async def check_llama_70b_status():
+    try:
+        response = requests.get(f"{LLAMA_70B_URL}/v1/models", timeout=5)
+        response.raise_for_status()
+        return {"status": "available"}
+    except requests.RequestException as e:
+        logger.error(f"Error checking Llama 3 70B status: {str(e)}")
+        raise HTTPException(status_code=503, detail="Llama 3 70B is not available")
