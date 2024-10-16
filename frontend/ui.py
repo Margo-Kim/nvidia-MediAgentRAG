@@ -17,10 +17,18 @@ import os
 import streamlit as st
 import requests
 import time
+import logging
 from dotenv import load_dotenv
 load_dotenv()
 
-BACKEND_URL = os.getenv("BACKEND_URL")
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+load_dotenv()
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080")
+logger.debug(f"Backend URL: {BACKEND_URL}")
+BACKEND_URL='http://localhost:8080'
 
 st.title("Knowledge Graph RAG")
 st.subheader("Load Data from Files")
@@ -38,7 +46,14 @@ else:
     available_models = []
 
 with st.sidebar:
-    llm = st.selectbox("Choose an LLM", available_models, index=available_models.index("mistralai/mixtral-8x7b-instruct-v0.1") if "mistralai/mixtral-8x7b-instruct-v0.1" in available_models else 0)
+    default_models = ["mistralai/mixtral-8x7b-instruct-v0.1", "meta/llama3-70b-instruct"]
+    default_index = next((i for i, model in enumerate(available_models) if model in default_models), 0)
+    
+    llm = st.selectbox("Choose an LLM", 
+                       available_models + (["meta/llama3-70b-instruct"] if "meta/llama3-70b-instruct" not in available_models else []),
+                       index=default_index)
+    if llm == "meta/llama3-70b-instruct":
+        st.info("Llama 3 70B is running in a separate Docker container. Ensure the container is active before using this model.")
     st.write("You selected: ", llm)
 
 def has_pdf_files(directory):
